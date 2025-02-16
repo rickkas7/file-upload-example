@@ -7,6 +7,9 @@
 #error "This library requires Device OS 6.3.0 or later"
 #endif
 
+#include <deque>
+#include <sys/stat.h>
+
 /**
  * This class is a singleton; you do not create one as a global, on the stack, or with new.
  * 
@@ -18,6 +21,27 @@
  */
 class FileUploadRK {
 public:
+    /**
+     * @brief Header at the beginning of the first chunk of data
+     * 
+     */
+    struct FirstHeader { // 8 bytes
+        uint16_t firstHeaderMarker; //!< Always 0 to differentiate from chunk
+        uint16_t version; //!< Version number (kProtocolVersion = 1)
+        uint8_t firstHeaderSize; //!< sizeof(FirstHeader)
+        uint8_t chunkHeaderSize; //!<, sizeof(ChunkHeader)
+        uint16_t jsonSize; //!< Size of the JSON data
+    };
+
+    /**
+     * @brief Structure that precedes data in an event
+     */
+    struct ChunkHeader { // 8 bytes
+        uint16_t chunkIndex; //!< 0-based index for which chunk this is
+        uint16_t chunkSize; //!< size of this chunk in bytes
+        uint32_t fileId; //!< fileId of this chunk
+    };
+
     /**
      * @brief Gets the singleton instance of this class, allocating it if necessary
      * 
@@ -33,12 +57,30 @@ public:
      */
     FileUploadRK &withEventName(const char *eventName) { this->eventName = eventName; return *this; };
 
+
+    /**
+     * @brief Set the maximum event chunk to use. Default is 16384, but can be made smaller
+     * 
+     * @param maxEventSize 
+     * @return FileUploadRK& 
+     * 
+     * Event size should be a multiple of 1024 bytes for efficiency. Because the event size must
+     * be stored in RAM, it may be desirable to set it smaller on nRF52 devices with more limited
+     * RAM.
+     * 
+     * This must be set before calling setup()!
+     */
+    FileUploadRK &withMaxEventSize(size_t maxEventSize) { this->maxEventSize = maxEventSize; return  *this; };
+
+
     /**
      * @brief Perform setup operations; call this from global application setup()
      * 
      * You typically use FileUploadRK::instance().setup();
+     * 
+     * Returns true if the operation succeeded or false if setup failed, typically out of memory.
      */
-    void setup();
+    bool setup();
 
     /**
      * @brief Perform application loop operations; call this from global application loop()
@@ -53,7 +95,7 @@ public:
      * @param path 
      * @return int 
      */
-    int queueFileToUpload(const char *path);
+    int queueFileToUpload(const char *path, Variant meta = {});
 
     /**
      * @brief Locks the mutex that protects shared resources
@@ -76,9 +118,18 @@ public:
      */
     void unlock() { os_mutex_unlock(mutex); };
 
+    /**
+     * @brief Version number of the file upload protocoll
+     * 
+     * This determines the first and data chunk header size and format
+     */
+    static const uint16_t kProtocolVersion = 1;
 
 protected:
-    class UploadState {
+    class UploadQueueEntry {
+    public:
+        String path;
+        Variant meta;
     };
 
     /**
@@ -104,6 +155,17 @@ protected:
     FileUploadRK& operator=(const FileUploadRK&) = delete;
 
     /**
+     * @brief State handler. This state is entered upon loop() starting.
+     */
+    void stateStart();
+
+    void stateSendChunk();
+
+    void stateWaitPublishComplete();
+
+    void stateWaitBeforeRetry();
+
+    /**
      * @brief Mutex to protect shared resources
      * 
      * This is initialized in setup() so make sure you call the setup() method from the global application setup.
@@ -114,6 +176,28 @@ protected:
      * @brief Event name to use for uploads
      */
     String eventName = "fileUpload";
+
+    std::function<void(FileUploadRK&)> stateHandler = &FileUploadRK::stateStart;
+
+    std::deque<UploadQueueEntry *>uploadQueue;
+
+    int fd = -1; 
+    struct stat sb;
+    static const size_t bufferSize = 1024;
+    uint8_t buffer[bufferSize];
+    String hash;
+    unsigned int fileId = 0;
+    size_t chunkOffset = 0;
+    size_t chunkIndex = 0;
+    size_t eventOffset = 0;
+    size_t fileSize = 0;
+    unsigned long stateTime= 0;
+    CloudEvent cloudEvent;
+
+    size_t maxEventSize = 16384;
+    unsigned int nextFileId = 0;
+
+    unsigned long retryWaitMs = 120000;
 
     /**
      * @brief Singleton instance of this class
