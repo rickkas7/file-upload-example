@@ -36,9 +36,10 @@ public:
     /**
      * @brief Structure that precedes data in an event
      */
-    struct ChunkHeader { // 8 bytes
+    struct ChunkHeader { // 12 bytes
         uint16_t chunkIndex; //!< 0-based index for which chunk this is
         uint16_t chunkSize; //!< size of this chunk in bytes
+        uint32_t chunkOffset; //!< offset in the file
         uint32_t fileId; //!< fileId of this chunk
     };
 

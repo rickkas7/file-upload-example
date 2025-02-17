@@ -121,6 +121,8 @@ void FileUploadRK::stateStart() {
 
         // Generate JSON data
         eventOffset = 0;
+        cloudEvent.clear();
+
         FirstHeader *fh = (FirstHeader *)&buffer[eventOffset];
         eventOffset += sizeof(FirstHeader);
 
@@ -196,6 +198,24 @@ void FileUploadRK::stateSendChunk() {
 
     if (!CloudEvent::canPublish(maxEventSize)) {
         return;
+    }
+
+    size_t chunkSize = fileSize - chunkOffset;
+    size_t maxChunkSize = maxEventSize - eventOffset - sizeof(ChunkHeader);
+    if (chunkSize > maxChunkSize) {
+        chunkSize = maxChunkSize;
+    }
+
+    // Add the chunk header
+    {
+        ChunkHeader ch;
+        ch.chunkIndex = (uint16_t) chunkIndex++;
+        ch.chunkSize = (uint16_t) chunkSize;
+        ch.chunkOffset = (uint32_t) chunkOffset;
+        ch.fileId = fileId;
+
+        cloudEvent.write((uint8_t *) &ch, sizeof(ChunkHeader));
+        eventOffset += sizeof(ChunkHeader);
     }
 
     while(eventOffset < maxEventSize) {
