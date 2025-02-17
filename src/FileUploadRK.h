@@ -187,7 +187,7 @@ protected:
     static const size_t bufferSize = 1024;
     uint8_t buffer[bufferSize];
     String hash;
-    unsigned int fileId = 0;
+    uint32_t fileId = 0;
     size_t chunkOffset = 0;
     size_t chunkIndex = 0;
     size_t eventOffset = 0;
@@ -196,7 +196,7 @@ protected:
     CloudEvent cloudEvent;
 
     size_t maxEventSize = 16384;
-    unsigned int nextFileId = 0;
+    uint32_t nextFileId = 0;
 
     unsigned long retryWaitMs = 120000;
 

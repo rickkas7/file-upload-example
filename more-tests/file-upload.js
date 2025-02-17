@@ -7,7 +7,8 @@ export default function process({ functionInfo, trigger, event }) {
     try {
         const tempLedger = Particle.ledger("rick-file-upload-temp");
         const tempLedgerData = tempLedger.get();
-        console.log('tempLedgerData', tempLedgerData);
+        
+        // console.log('tempLedgerData', tempLedgerData);
         // delete tempLedgerData.data.updatedAt; // TEMPORARY for clean-up
         // delete tempLedgerData.data.data; // TEMPORARY for clean-up
 
@@ -76,7 +77,7 @@ export default function process({ functionInfo, trigger, event }) {
         chunkHeader.chunkIndex = decoded.data[chunkHeaderOffset] | (decoded.data[chunkHeaderOffset + 1] << 8);
         chunkHeader.chunkSize = decoded.data[chunkHeaderOffset + 2] | (decoded.data[chunkHeaderOffset + 3] << 8);
         chunkHeader.chunkOffset = decoded.data[chunkHeaderOffset + 4] | (decoded.data[chunkHeaderOffset + 5] << 8)  | (decoded.data[chunkHeaderOffset + 6] << 16)  | (decoded.data[chunkHeaderOffset + 7] << 24);
-        chunkHeader.fileId = decoded.data[chunkHeaderOffset + 8] | (decoded.data[chunkHeaderOffset + 5] << 9)  | (decoded.data[chunkHeaderOffset + 10] << 16)  | (decoded.data[chunkHeaderOffset + 11] << 24);
+        chunkHeader.fileId = decoded.data[chunkHeaderOffset + 8] | (decoded.data[chunkHeaderOffset + 9] << 8)  | (decoded.data[chunkHeaderOffset + 10] << 16)  | (decoded.data[chunkHeaderOffset + 11] << 24);
 
         const dataOffset = chunkHeaderOffset + 12;
 
@@ -115,7 +116,7 @@ export default function process({ functionInfo, trigger, event }) {
         let contiguousChunks = true;
         let allChunks = false;
         for(let ii = 0; ii < tempLedgerFile.chunks.length; ii++) {
-            if (typeof tempLedgerFile.chunks[ii] == 'undefined') {
+            if (!tempLedgerFile.chunks[ii]) {
                 contiguousChunks = false;
             }
         }
@@ -127,7 +128,8 @@ export default function process({ functionInfo, trigger, event }) {
         }
 
         // console.log('fileUpload', {firstHeader, chunkHeader, chunkHeaderOffset, dataOffset, data: decoded.data});
-        console.log('fileUpload', {firstHeader, chunkHeader, contiguousChunks, allChunks, chunk: tempLedgerFile.chunks[chunkHeader.chunkIndex]});
+        console.log('fileUpload', {firstHeader, chunkHeader, contiguousChunks, allChunks, });
+        // chunk: tempLedgerFile.chunks[chunkHeader.chunkIndex]
 
         if (allChunks) {
             let dataBytes = [];
@@ -152,16 +154,12 @@ export default function process({ functionInfo, trigger, event }) {
                     event: tempLedgerFile.event,
                     size: tempLedgerFile.firstHeader.json.s,
                     meta: tempLedgerFile.firstHeader.json.m,
-                    fileData: base85Encode(dataBytes),
+                    elapsed: Math.floor(new Date().getTime() / 1000) - tempLedgerFile.ts,
                 }
-
+                console.log('allChunks valid', fileLedgerData.data);   
+                
+                // Put this after the log so it won't log the actual value
                 fileLedgerData.data.fileData = base85Encode(dataBytes);
-                fileLedgerData.data.hash = hashHex;
-                fileLedgerData.data.event = tempLedgerFile.event;
-                fileLedgerData.data.size = tempLedgerFile.firstHeader.json.s;
-                fileLedgerData.data.meta = tempLedgerFile.firstHeader.json.m;
-
-                console.log('allChunks valid', fileLedgerData.data);    
 
                 fileLedger.set(fileLedgerData.data, Particle.REPLACE);
                 delete tempLedgerData.data.files[chunkHeader.fileId.toString()];

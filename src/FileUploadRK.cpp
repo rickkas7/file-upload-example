@@ -62,7 +62,7 @@ void FileUploadRK::stateStart() {
     }
 
     if (nextFileId == 0) {
-        nextFileId = (unsigned int) random();
+        nextFileId = (uint32_t) random();
     }
 
     WITH_LOCK(*this) {
@@ -117,7 +117,7 @@ void FileUploadRK::stateStart() {
             }
         }
         fileId = nextFileId++;
-        _log.trace("%s: fileId=%u size=%d hash=%s", stateName, fileId, (int)fileSize, hash.c_str());
+        _log.trace("%s: fileId=%lu size=%d hash=%s", stateName, fileId, (int)fileSize, hash.c_str());
 
         // Generate JSON data
         eventOffset = 0;
@@ -208,7 +208,7 @@ void FileUploadRK::stateSendChunk() {
     // Add the chunk header
     {
         ChunkHeader ch;
-        ch.chunkIndex = (uint16_t) chunkIndex++;
+        ch.chunkIndex = (uint16_t) chunkIndex;
         ch.chunkSize = (uint16_t) chunkSize;
         ch.chunkOffset = (uint32_t) chunkOffset;
         ch.fileId = fileId;
@@ -267,6 +267,7 @@ void FileUploadRK::stateWaitPublishComplete() {
     cloudEvent.name(eventName);
     cloudEvent.contentType(ContentType::BINARY);
     eventOffset = 0;
+    chunkIndex++;
 
     stateHandler = &FileUploadRK::stateSendChunk;
 }
