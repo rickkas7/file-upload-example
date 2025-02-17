@@ -10,18 +10,26 @@ export default function process({ functionInfo, trigger, event }) {
         console.log('tempLedgerData', tempLedgerData);
         // delete tempLedgerData.data.updatedAt; // TEMPORARY for clean-up
         // delete tempLedgerData.data.data; // TEMPORARY for clean-up
-    
+
+        if (!tempLedgerData.data.stats) {
+            tempLedgerData.data.stats = {
+                success: 0,
+                badHash: 0,
+                expired: 0,
+            };
+        }
+
         // Clean up expired files 
         if (tempLedgerData.data.files) {
             const expireBefore = Math.floor(new Date().getTime() / 1000) - 300; // 5 minutes ago
             for(const fileId in tempLedgerData.data.files) {
                 if (tempLedgerData.data.files[fileId].ts < expireBefore) {
                     console.log('removing expired file', tempLedgerData.data.files[fileId]);
+                    tempLedgerData.data.stats.expired++;
                     delete tempLedgerData.data.files[fileId];
                 }
             }    
         }
-        
 
         const decoded = dataUrlDecode(event.eventData);
         // console.log('fileUpload decoded', decoded);
@@ -152,16 +160,18 @@ export default function process({ functionInfo, trigger, event }) {
                 fileLedgerData.data.event = tempLedgerFile.event;
                 fileLedgerData.data.size = tempLedgerFile.firstHeader.json.s;
                 fileLedgerData.data.meta = tempLedgerFile.firstHeader.json.m;
-        
+
                 console.log('allChunks valid', fileLedgerData.data);    
 
                 fileLedger.set(fileLedgerData.data, Particle.REPLACE);
+                delete tempLedgerData.data.files[chunkHeader.fileId.toString()];
+                tempLedgerData.data.stats.success++;
             }
             else {
-                console.log('allChunks bad hash!', {fileData, hashHex});                    
+                console.log('allChunks bad hash!', {fileData, hashHex});  
+                tempLedgerFile.error = 'complete bad hash';
+                tempLedgerData.data.stats.badHash++;
             }
-
-            delete tempLedgerData.data.files[chunkHeader.fileId.toString()];
         }
 
 

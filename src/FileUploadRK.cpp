@@ -121,7 +121,6 @@ void FileUploadRK::stateStart() {
 
         // Generate JSON data
         eventOffset = 0;
-        cloudEvent.clear();
 
         FirstHeader *fh = (FirstHeader *)&buffer[eventOffset];
         eventOffset += sizeof(FirstHeader);
@@ -159,7 +158,7 @@ void FileUploadRK::stateStart() {
         chunkOffset = 0;
         chunkIndex = 0;
 
-        // FirstHeader, JSON data
+        cloudEvent.clear();
         cloudEvent.name(eventName);
         cloudEvent.contentType(ContentType::BINARY);
         cloudEvent.write(buffer, eventOffset);
@@ -245,6 +244,7 @@ void FileUploadRK::stateSendChunk() {
     _log.trace("%s publishing chunkOffset=%d fileSize=%d", stateName, (int)chunkOffset,(int)fileSize);
     Particle.publish(cloudEvent);
 
+    stateHandler = &FileUploadRK::stateWaitPublishComplete;
 }
 
 void FileUploadRK::stateWaitPublishComplete() {
@@ -263,12 +263,16 @@ void FileUploadRK::stateWaitPublishComplete() {
         return;
     }
 
-    
+    cloudEvent.clear();
+    cloudEvent.name(eventName);
+    cloudEvent.contentType(ContentType::BINARY);
+    eventOffset = 0;
+
     stateHandler = &FileUploadRK::stateSendChunk;
 }
 
 void FileUploadRK::stateWaitBeforeRetry() {
-    static const char *stateName = "stateWaitBeforeRetry";
+    // static const char *stateName = "stateWaitBeforeRetry";
 
     if (millis() - stateTime < retryWaitMs) {
         return;

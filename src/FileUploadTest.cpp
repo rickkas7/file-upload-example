@@ -268,7 +268,9 @@ const char *testData2_hash = "c11b6385aed1547766e51e704eb23921b22b589b";
 
 const char *testPath = "/usr/fileTest1";
 
-void publishData();
+void publishData1();
+void publishData2();
+void publishDataRandom(int numBytes);
 
 void setup() {
     FileUploadRK::instance().setup();
@@ -283,14 +285,15 @@ void loop() {
     if (Particle.connected()) {
         if (lastPublish == 0 || millis() - lastPublish >= publishPeriod.count()) {
             lastPublish = millis();
-            publishData();
+            // publishData1();
+            publishDataRandom(20000);
         }
     }
 
 }
 
 
-void publishData() {
+void publishData1() {
     
     int fd = open(testPath, O_RDWR | O_CREAT | O_TRUNC);
     if (fd != -1) {
@@ -298,9 +301,41 @@ void publishData() {
         close(fd);
     }
 
+    FileUploadRK::instance().queueFileToUpload(testPath);
+}
+
+void publishData2() {
+    
+    int fd = open(testPath, O_RDWR | O_CREAT | O_TRUNC);
+    if (fd != -1) {
+        write(fd, testData2, sizeof(testData2));
+        close(fd);
+    }
+
+    FileUploadRK::instance().queueFileToUpload(testPath);
+}
+
+void publishDataRandom(int numBytes) {
+    int fd = open(testPath, O_RDWR | O_CREAT | O_TRUNC);
+    if (fd != -1) {
+        uint8_t buf[256];
+        int offset = 0;
+        while(offset < numBytes) {
+            int count = numBytes - offset;
+            if (count > (int)sizeof(buf)) {
+                count = sizeof(buf);
+            }
+            for(int ii = 0; ii < count; ii++) {
+                buf[ii] = (uint8_t) rand();
+            }
+            write(fd, buf, count);
+
+            offset += count;
+        }
+
+        close(fd);
+    }
 
     FileUploadRK::instance().queueFileToUpload(testPath);
 
-
-    
 }
