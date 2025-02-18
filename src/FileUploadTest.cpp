@@ -271,8 +271,11 @@ const char *testPath = "/usr/fileTest1";
 void publishData1();
 void publishData2();
 void publishDataRandom(int numBytes);
+int testHandler(String cmd);
 
 void setup() {
+    Particle.function("test", testHandler);
+
     FileUploadRK::instance().setup();
 
 }
@@ -285,8 +288,7 @@ void loop() {
     if (Particle.connected()) {
         if (lastPublish == 0 || millis() - lastPublish >= publishPeriod.count()) {
             lastPublish = millis();
-            publishData1();
-            // publishDataRandom(20000);
+            // publishData1();
         }
     }
 
@@ -336,6 +338,30 @@ void publishDataRandom(int numBytes) {
         close(fd);
     }
 
+    Variant meta;
+    meta.set("numBytes", numBytes);
+
     FileUploadRK::instance().queueFileToUpload(testPath);
 
+}
+
+int testHandler(String cmd) {
+    int n = cmd.toInt();
+    Log.info("test %d", n);
+
+    switch(n) {
+    case 1:
+        publishData1();
+        break;
+
+    case 2:
+        publishData2();
+        break;
+
+    default:
+        publishDataRandom(n);
+        break;
+    }
+
+    return 0;
 }
