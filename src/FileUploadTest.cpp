@@ -360,8 +360,9 @@ void publishDataRandom(int numBytes) {
 
     Variant meta;
     meta.set("numBytes", numBytes);
+    meta.set("path", testPath.c_str());
 
-    FileUploadRK::instance().queueFileToUpload(testPath);
+    FileUploadRK::instance().queueFileToUpload(testPath, meta);
 
 }
 
