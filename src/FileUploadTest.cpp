@@ -1,4 +1,5 @@
 #include "FileUploadRK.h"
+#include "SequentialFileRK.h"
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -266,15 +267,30 @@ const uint8_t testData2[4500] = {
 // SHA1 hash of the data
 const char *testData2_hash = "c11b6385aed1547766e51e704eb23921b22b589b";
 
-const char *testPath = "/usr/fileTest1";
+const char *testPath = "/usr/uploadTest";
+SequentialFile testFiles;
 
 void publishData1();
 void publishData2();
 void publishDataRandom(int numBytes);
+void completionHandler(const FileUploadRK::UploadQueueEntry *queueEntry);
+
 int testHandler(String cmd);
+
 
 void setup() {
     Particle.function("test", testHandler);
+
+    unlink("/usr/fileTest1"); // TEMPORARY
+
+    testFiles
+        .withDirPath(testPath)
+        .scanDir();
+
+
+    testFiles.removeAll(false);
+
+    FileUploadRK::instance().withCompletionHandler(completionHandler);
 
     FileUploadRK::instance().setup();
 
@@ -296,6 +312,7 @@ void loop() {
 
 
 void publishData1() {
+    String testPath = testFiles.getPathForFileNum(testFiles.reserveFile());
     
     int fd = open(testPath, O_RDWR | O_CREAT | O_TRUNC);
     if (fd != -1) {
@@ -307,6 +324,7 @@ void publishData1() {
 }
 
 void publishData2() {
+    String testPath = testFiles.getPathForFileNum(testFiles.reserveFile());
     
     int fd = open(testPath, O_RDWR | O_CREAT | O_TRUNC);
     if (fd != -1) {
@@ -318,6 +336,8 @@ void publishData2() {
 }
 
 void publishDataRandom(int numBytes) {
+    String testPath = testFiles.getPathForFileNum(testFiles.reserveFile());
+
     int fd = open(testPath, O_RDWR | O_CREAT | O_TRUNC);
     if (fd != -1) {
         uint8_t buf[256];
@@ -326,7 +346,7 @@ void publishDataRandom(int numBytes) {
             int count = numBytes - offset;
             if (count > (int)sizeof(buf)) {
                 count = sizeof(buf);
-            }
+            } 
             for(int ii = 0; ii < count; ii++) {
                 buf[ii] = (uint8_t) rand();
             }
@@ -344,6 +364,13 @@ void publishDataRandom(int numBytes) {
     FileUploadRK::instance().queueFileToUpload(testPath);
 
 }
+
+void completionHandler(const FileUploadRK::UploadQueueEntry *queueEntry) {
+    Log.info("file sent %s", queueEntry->path.c_str());
+
+    unlink(queueEntry->path.c_str());
+}
+
 
 int testHandler(String cmd) {
     int n = cmd.toInt();

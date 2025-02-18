@@ -78,20 +78,23 @@ void FileUploadRK::stateStart() {
 
         fd = open(path, O_RDONLY);
         if (fd == -1) {
-            _log.error("error opening %s %d (discarding)", path, errno);
+            _log.error("%s rror opening %s %d (discarding)", stateName, path, errno);
             uploadQueue.pop_front();
             return;
         }
 
-        sb.st_size = 0;
-        fstat(fd, &sb);
-
-        if (sb.st_size == 0) {
-            _log.info("file is empty %s (discarding)", path);
-            uploadQueue.pop_front();
-            return;
+        {
+            struct stat sb;
+            sb.st_size = 0;
+            fstat(fd, &sb);
+    
+            if (sb.st_size == 0) {
+                _log.info("%s file is empty %s (discarding)", stateName, path);
+                uploadQueue.pop_front();
+                return;
+            }
+            fileSize = (size_t) sb.st_size;    
         }
-        fileSize = (size_t) sb.st_size;
 
         // Calculate the SHA1 hash
         {
@@ -219,7 +222,7 @@ void FileUploadRK::stateSendChunk() {
             // JSON data will fit at the end of the event
             cloudEvent.write(json.c_str(), jsonSize);
             eventOffset += jsonSize;
-            
+
             _log.trace("%s: trailer %s", stateName, json.c_str());
 
             trailerSent = true;
@@ -255,6 +258,9 @@ void FileUploadRK::stateWaitPublishComplete() {
     if (!trailerSent) {
         stateHandler = &FileUploadRK::stateSendChunk;
     } else {
+        if (completionHandler) {
+            completionHandler(uploadQueue.front());
+        }
         uploadQueue.pop_front();
         stateHandler = &FileUploadRK::stateStart;
     }
