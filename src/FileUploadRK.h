@@ -22,21 +22,12 @@
 class FileUploadRK {
 public:
     /**
-     * @brief Header at the beginning of the first chunk of data
-     * 
-     */
-    struct FirstHeader { // 8 bytes
-        uint16_t firstHeaderMarker; //!< Always 0 to differentiate from chunk
-        uint16_t version; //!< Version number (kProtocolVersion = 1)
-        uint8_t firstHeaderSize; //!< sizeof(FirstHeader)
-        uint8_t chunkHeaderSize; //!<, sizeof(ChunkHeader)
-        uint16_t jsonSize; //!< Size of the JSON data
-    };
-
-    /**
      * @brief Structure that precedes data in an event
      */
-    struct ChunkHeader { // 12 bytes
+    struct ChunkHeader { // 16 bytes
+        uint8_t version; //!< Version number (kProtocolVersion = 1)
+        uint8_t flags; //!< Various flags
+        uint16_t reserved; //!< Reserved for future use
         uint16_t chunkIndex; //!< 0-based index for which chunk this is
         uint16_t chunkSize; //!< size of this chunk in bytes
         uint32_t chunkOffset; //!< offset in the file
@@ -126,6 +117,9 @@ public:
      */
     static const uint16_t kProtocolVersion = 1;
 
+
+    static const uint8_t kFlagTrailer = 0x01;
+
 protected:
     class UploadQueueEntry {
     public:
@@ -192,7 +186,9 @@ protected:
     size_t chunkIndex = 0;
     size_t eventOffset = 0;
     size_t fileSize = 0;
-    unsigned long stateTime= 0;
+    unsigned long stateTime = 0;
+    unsigned long fileStartTime = 0;
+    bool trailerSent = false;
     CloudEvent cloudEvent;
 
     size_t maxEventSize = 16384;

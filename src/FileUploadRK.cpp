@@ -74,6 +74,7 @@ void FileUploadRK::stateStart() {
         const char *path = uploadQueue.front()->path.c_str();
 
         _log.trace("%s: processing file %s", stateName, path);
+        fileStartTime = millis();
 
         fd = open(path, O_RDONLY);
         if (fd == -1) {
@@ -119,65 +120,10 @@ void FileUploadRK::stateStart() {
         fileId = nextFileId++;
         _log.trace("%s: fileId=%lu size=%d hash=%s", stateName, fileId, (int)fileSize, hash.c_str());
 
-        // Generate JSON data
-        eventOffset = 0;
-
-        FirstHeader *fh = (FirstHeader *)&buffer[eventOffset];
-        eventOffset += sizeof(FirstHeader);
-
-        fh->firstHeaderMarker = 0;
-        fh->version = kProtocolVersion;
-        fh->firstHeaderSize = (uint8_t)sizeof(FirstHeader);
-        fh->chunkHeaderSize = (uint8_t)sizeof(ChunkHeader);
-        // fh->jsonSize is filled out below after determining the size
-
-        char *jsonData = (char *)&buffer[eventOffset];
-        size_t jsonMaxDataSize = bufferSize - eventOffset - sizeof(ChunkHeader) - 1;
-
-        Variant v;
-        v.set("s", Variant(fileSize));
-        v.set("h", Variant(hash.c_str()));
-        v.set("id", Variant(fileId));
-        v.set("m", uploadQueue.front()->meta);
-
-        {
-            String json = v.toJSON();
-            if (json.length() > jsonMaxDataSize) {
-                _log.error("meta data too large %s (discarding)", path);
-                uploadQueue.pop_front();
-                return;
-            }
-            memcpy(jsonData, json.c_str(), json.length());
-            fh->jsonSize = (uint16_t) json.length();
-
-            jsonData[fh->jsonSize] = 0;
-            eventOffset += fh->jsonSize;
-            _log.trace("%s: jsonData %s", stateName, jsonData);
-        }
-
         chunkOffset = 0;
         chunkIndex = 0;
-
-        cloudEvent.clear();
-        cloudEvent.name(eventName);
-        cloudEvent.contentType(ContentType::BINARY);
-        cloudEvent.write(buffer, eventOffset);
-        
-        // First chunk
-        // Version (2 bytes, little endian, unsigned)
-        // JSON size (2 bytes, little endian, unsigned)
-
-        // Header chunk (JSON)
-        // File size (s), SHA1 hash (h), filename (n), file id (id)
-        // Metadata (m)
-
-        // Data chunk header (fixed size, depends on version)
-        // Chunk index (2 bytes, little endian, unsigned)
-        // Chunk size (2 bytes, little endian, unsigned
-        // file id (4 bytes, little endian, unsigned)
-
-        // Data follows data chunk header (variable size)
-
+        eventOffset = 0;
+        trailerSent = false;
 
         stateHandler = &FileUploadRK::stateSendChunk;
     }
@@ -188,13 +134,6 @@ void FileUploadRK::stateStart() {
 void FileUploadRK::stateSendChunk() {
     static const char *stateName = "stateSendChunk";
 
-    if (chunkOffset >= fileSize) {
-        _log.trace("%s file send complete", stateName);
-        stateHandler = &FileUploadRK::stateStart;
-        uploadQueue.pop_front();
-        return;
-    }
-
     if (!CloudEvent::canPublish(maxEventSize)) {
         return;
     }
@@ -204,47 +143,97 @@ void FileUploadRK::stateSendChunk() {
     if (chunkSize > maxChunkSize) {
         chunkSize = maxChunkSize;
     }
+    bool sendTrailer = (chunkOffset >= fileSize);
 
-    // Add the chunk header
-    {
-        ChunkHeader ch;
-        ch.chunkIndex = (uint16_t) chunkIndex;
-        ch.chunkSize = (uint16_t) chunkSize;
-        ch.chunkOffset = (uint32_t) chunkOffset;
-        ch.fileId = fileId;
+    cloudEvent.clear();
+    cloudEvent.name(eventName);
+    cloudEvent.contentType(ContentType::BINARY);
+    
+    eventOffset = 0;
 
-        cloudEvent.write((uint8_t *) &ch, sizeof(ChunkHeader));
-        eventOffset += sizeof(ChunkHeader);
+    if (!sendTrailer) {
+        // Add the chunk header
+        {
+            ChunkHeader ch = {0};
+            ch.version = kProtocolVersion;
+            ch.flags = 0;
+            ch.chunkIndex = (uint16_t) chunkIndex++;
+            ch.chunkSize = (uint16_t) chunkSize;
+            ch.chunkOffset = (uint32_t) chunkOffset;
+            ch.fileId = fileId;
+
+            cloudEvent.write((uint8_t *) &ch, sizeof(ChunkHeader));
+            eventOffset += sizeof(ChunkHeader);
+        }
+
+        while(eventOffset < maxEventSize) {
+            size_t count = fileSize - chunkOffset;
+            if (count == 0) {
+                break;
+            }
+    
+            size_t spaceLeft = maxEventSize - eventOffset;
+            if (count > spaceLeft) {
+                count = spaceLeft;
+            }
+            if (count > bufferSize) {
+                count = bufferSize;
+            }
+        
+            _log.trace("%s read chunkOffset=%d chunkIndex=%d count=%d", stateName, (int)chunkOffset,(int)chunkIndex, (int)count);
+        
+            read(fd, buffer, count);
+            cloudEvent.write(buffer, count);
+        
+            chunkOffset += count;
+            eventOffset += count;
+        }
+
     }
 
-    while(eventOffset < maxEventSize) {
-        size_t count = fileSize - chunkOffset;
-        if (count == 0) {
-            break;
-        }
+    sendTrailer = (chunkOffset >= fileSize);
+    if (sendTrailer) {
+        // Generate JSON data 
+        Variant v;
+        v.set("s", Variant(fileSize));
+        v.set("h", Variant(hash.c_str()));
+        v.set("id", Variant(fileId));
+        v.set("n", chunkIndex);
+        v.set("e", millis() - fileStartTime);
+        v.set("m", uploadQueue.front()->meta);
 
-        size_t spaceLeft = maxEventSize - eventOffset;
-        if (count > spaceLeft) {
-            count = spaceLeft;
+        String json = v.toJSON();
+        size_t jsonSize = json.length();
+
+        if ((eventOffset + sizeof(ChunkHeader) + jsonSize) <= maxEventSize) {
+            // Update chunk header
+            ChunkHeader ch = {0};
+            ch.version = kProtocolVersion;
+            ch.flags = kFlagTrailer;
+            ch.chunkSize = (uint16_t) jsonSize;
+            ch.fileId = fileId;
+    
+            cloudEvent.write((uint8_t *) &ch, sizeof(ChunkHeader));
+            eventOffset += sizeof(ChunkHeader);
+            
+            // JSON data will fit at the end of the event
+            cloudEvent.write(json.c_str(), jsonSize);
+            eventOffset += jsonSize;
+            
+            _log.trace("%s: trailer %s", stateName, json.c_str());
+
+            trailerSent = true;
         }
-        if (count > bufferSize) {
-            count = bufferSize;
+        else {
+            _log.trace("%s JSON will be sent in the next event", stateName);
         }
-    
-        _log.trace("%s read chunkOffset=%d chunkIndex=%d count=%d", stateName, (int)chunkOffset,(int)chunkIndex, (int)count);
-    
-        read(fd, buffer, count);
-        cloudEvent.write(buffer, count);
-    
-        chunkOffset += count;
-        eventOffset += count;
     }
-
 
     _log.trace("%s publishing chunkOffset=%d fileSize=%d", stateName, (int)chunkOffset,(int)fileSize);
     Particle.publish(cloudEvent);
 
     stateHandler = &FileUploadRK::stateWaitPublishComplete;
+
 }
 
 void FileUploadRK::stateWaitPublishComplete() {
@@ -263,14 +252,14 @@ void FileUploadRK::stateWaitPublishComplete() {
         return;
     }
 
-    cloudEvent.clear();
-    cloudEvent.name(eventName);
-    cloudEvent.contentType(ContentType::BINARY);
-    eventOffset = 0;
-    chunkIndex++;
-
-    stateHandler = &FileUploadRK::stateSendChunk;
+    if (!trailerSent) {
+        stateHandler = &FileUploadRK::stateSendChunk;
+    } else {
+        uploadQueue.pop_front();
+        stateHandler = &FileUploadRK::stateStart;
+    }
 }
+
 
 void FileUploadRK::stateWaitBeforeRetry() {
     // static const char *stateName = "stateWaitBeforeRetry";

@@ -285,8 +285,8 @@ void loop() {
     if (Particle.connected()) {
         if (lastPublish == 0 || millis() - lastPublish >= publishPeriod.count()) {
             lastPublish = millis();
-            // publishData1();
-            publishDataRandom(20000);
+            publishData1();
+            // publishDataRandom(20000);
         }
     }
 
