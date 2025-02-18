@@ -281,26 +281,27 @@ int testHandler(String cmd);
 void setup() {
     Particle.function("test", testHandler);
 
-    unlink("/usr/fileTest1"); // TEMPORARY
-
+    // Remove any existing temporary files
     testFiles
         .withDirPath(testPath)
         .scanDir();
-
-
     testFiles.removeAll(false);
 
-    FileUploadRK::instance().withCompletionHandler(completionHandler);
-
-    FileUploadRK::instance().setup();
+    // Set up the uploaded 
+    FileUploadRK::instance()
+        .withCompletionHandler(completionHandler)
+        .withEventName("fileUpload")
+        .setup();
 
 }
 
 
 void loop() {
+    // This must be called for the uploaded to be used
     FileUploadRK::instance().loop();
 
 
+    // If you wanted to test continuously, you could update this code:
     if (Particle.connected()) {
         if (lastPublish == 0 || millis() - lastPublish >= publishPeriod.count()) {
             lastPublish = millis();

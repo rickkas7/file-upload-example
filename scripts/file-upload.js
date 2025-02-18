@@ -1,3 +1,5 @@
+// This script is intended for a logic block
+
 import Particle from 'particle:core';
 import { dataUrlDecode, base85Encode, base85Decode } from 'particle:encoding';
 
