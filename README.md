@@ -1,2 +1,6 @@
-# FileUploadRK
-Library to help with uploading files to the Particle cloud
+# file-upload-example
+
+- Github: https://github.com/rickkas7/file-upload-example
+- License: MIT
+
+
